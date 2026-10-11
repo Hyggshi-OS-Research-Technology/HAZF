@@ -194,20 +194,6 @@ static void show_shortcuts_dialog(AppState *st) {
 }
 
 static void show_create_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path, int idx) {
-    // Build popover with actions for Create list
-    GMenu *menu = g_menu_new();
-    g_menu_append(menu, "Open Containing Folder", "create.open-folder");
-    g_menu_append(menu, "Copy Path", "create.copy-path");
-    g_menu_append(menu, "Remove", "create.remove");
-    GMenu *section = g_menu_new();
-    g_menu_append(section, "Clear All", "create.clear-all");
-    g_menu_append_section(menu, nullptr, G_MENU_MODEL(section));
-    GtkWidget *popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
-    gtk_widget_set_parent(popover, widget);
-    // Simple actions via signal on menu? For simplicity, handle via custom popover with buttons
-    // Instead, create a plain popover with box of buttons for polished look without GAction boilerplate
-    gtk_widget_unparent(popover);
-    // Create custom popover for better control
     GtkWidget *custom = gtk_popover_new();
     gtk_widget_set_parent(custom, widget);
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
@@ -1581,93 +1567,44 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(brand_box), ver);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), brand_box);
 
-    // Primary menu — complete mandatory features
+    // Primary menu — simple popover (polished, no GAction complexity for CI robustness)
     GtkWidget *menu_btn = gtk_menu_button_new();
     gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(menu_btn), "open-menu-symbolic");
     gtk_widget_add_css_class(menu_btn, "icon-button");
     gtk_widget_set_tooltip_text(menu_btn, "Primary Menu");
-    GMenu *primary = g_menu_new();
-    GMenu *sec_new = g_menu_new();
-    g_menu_append(sec_new, "New Archive", "app.new");
-    g_menu_append(sec_new, "Open Archive…", "app.open");
-    g_menu_append_section(primary, nullptr, G_MENU_MODEL(sec_new));
-    GMenu *sec_edit = g_menu_new();
-    g_menu_append(sec_edit, "Add Files…", "app.add-files");
-    g_menu_append(sec_edit, "Clear List", "app.clear");
-    g_menu_append_section(primary, nullptr, G_MENU_MODEL(sec_edit));
-    GMenu *sec_help = g_menu_new();
-    g_menu_append(sec_help, "Keyboard Shortcuts", "app.shortcuts");
-    g_menu_append(sec_help, "About HAZF", "app.about");
-    g_menu_append_section(primary, nullptr, G_MENU_MODEL(sec_help));
-    gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(menu_btn), G_MENU_MODEL(primary));
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), menu_btn);
-
-    // Actions for primary menu
+    GtkWidget *menu_pop = gtk_popover_new();
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu_btn), menu_pop);
     {
-        GSimpleAction *a;
-        a = g_simple_action_new("new", nullptr);
-        g_signal_connect(a, "activate", (GCallback)(+[](GSimpleAction*, GVariant*, gpointer d){
-            AppState *s=(AppState*)d;
-            s->create_files.clear();
-            refresh_create_list(s);
-            gtk_stack_set_visible_child_name(s->stack, "create");
-        }), st);
-        g_action_map_add_action(G_ACTION_MAP(st->app), G_ACTION(a));
-
-        a = g_simple_action_new("open", nullptr);
-        g_signal_connect(a, "activate", (GCallback)(+[](GSimpleAction*, GVariant*, gpointer d){
-            AppState *s=(AppState*)d;
-            gtk_stack_set_visible_child_name(s->stack, "browse");
-            choose_archive_open(s, s->window, [s](std::string p){
-                s->browse_archive_path=p;
-                gtk_editable_set_text(GTK_EDITABLE(s->browse_archive_entry), p.c_str());
-                do_browse_open(s);
-            });
-        }), st);
-        g_action_map_add_action(G_ACTION_MAP(st->app), G_ACTION(a));
-
-        a = g_simple_action_new("add-files", nullptr);
-        g_signal_connect(a, "activate", (GCallback)(+[](GSimpleAction*, GVariant*, gpointer d){
-            AppState *s=(AppState*)d;
-            gtk_stack_set_visible_child_name(s->stack, "create");
-            choose_files_open(s, s->window, [s](std::vector<std::string> files){
-                for(auto &f: files) s->create_files.push_back(f);
-                refresh_create_list(s);
-                gtk_widget_set_sensitive(s->create_create_btn, !s->create_files.empty() && !s->create_archive_path.empty());
-            });
-        }), st);
-        g_action_map_add_action(G_ACTION_MAP(st->app), G_ACTION(a));
-
-        a = g_simple_action_new("clear", nullptr);
-        g_signal_connect(a, "activate", (GCallback)(+[](GSimpleAction*, GVariant*, gpointer d){
-            AppState *s=(AppState*)d;
-            s->create_files.clear();
-            refresh_create_list(s);
-        }), st);
-        g_action_map_add_action(G_ACTION_MAP(st->app), G_ACTION(a));
-
-        a = g_simple_action_new("shortcuts", nullptr);
-        g_signal_connect(a, "activate", (GCallback)(+[](GSimpleAction*, GVariant*, gpointer d){
-            show_shortcuts_dialog((AppState*)d);
-        }), st);
-        g_action_map_add_action(G_ACTION_MAP(st->app), G_ACTION(a));
-
-        a = g_simple_action_new("about", nullptr);
-        g_signal_connect(a, "activate", (GCallback)(+[](GSimpleAction*, GVariant*, gpointer d){
-            show_about_dialog((AppState*)d);
-        }), st);
-        g_action_map_add_action(G_ACTION_MAP(st->app), G_ACTION(a));
-
-        // Accelerators — mandatory shortcuts
-        const char *acc_new[] = {"<Control>n", nullptr};
-        gtk_application_set_accels_for_action(GTK_APPLICATION(st->app), "app.new", acc_new);
-        const char *acc_open[] = {"<Control>o", nullptr};
-        gtk_application_set_accels_for_action(GTK_APPLICATION(st->app), "app.open", acc_open);
-        const char *acc_add[] = {"<Control>a", nullptr};
-        gtk_application_set_accels_for_action(GTK_APPLICATION(st->app), "app.add-files", acc_add);
-        const char *acc_short[] = {"F1", nullptr};
-        gtk_application_set_accels_for_action(GTK_APPLICATION(st->app), "app.shortcuts", acc_short);
+        GtkWidget *mbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+        gtk_widget_set_margin_top(mbox, 8); gtk_widget_set_margin_bottom(mbox, 8);
+        gtk_widget_set_margin_start(mbox, 8); gtk_widget_set_margin_end(mbox, 8);
+        auto add_item = [&](const char *label, const char *icon, auto cb){
+            GtkWidget *b = gtk_button_new();
+            gtk_widget_add_css_class(b, "flat");
+            GtkWidget *r = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+            gtk_box_append(GTK_BOX(r), gtk_image_new_from_icon_name(icon));
+            gtk_box_append(GTK_BOX(r), gtk_label_new(label));
+            gtk_button_set_child(GTK_BUTTON(b), r);
+            g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
+                auto *func = (std::function<void()>*)d;
+                (*func)();
+                delete func;
+            }), new std::function<void()>(cb));
+            // also close popover on click
+            g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), menu_pop);
+            gtk_box_append(GTK_BOX(mbox), b);
+        };
+        add_item("New Archive", "document-new-symbolic", [st](){ st->create_files.clear(); refresh_create_list(st); gtk_stack_set_visible_child_name(st->stack, "create"); });
+        add_item("Open Archive…", "document-open-symbolic", [st](){ gtk_stack_set_visible_child_name(st->stack, "browse"); choose_archive_open(st, st->window, [st](std::string p){ st->browse_archive_path=p; gtk_editable_set_text(GTK_EDITABLE(st->browse_archive_entry), p.c_str()); do_browse_open(st); }); });
+        add_item("Add Files…", "list-add-symbolic", [st](){ gtk_stack_set_visible_child_name(st->stack, "create"); choose_files_open(st, st->window, [st](std::vector<std::string> files){ for(auto &f: files) st->create_files.push_back(f); refresh_create_list(st); gtk_widget_set_sensitive(st->create_create_btn, !st->create_files.empty() && !st->create_archive_path.empty()); }); });
+        add_item("Clear List", "edit-clear-symbolic", [st](){ st->create_files.clear(); refresh_create_list(st); });
+        GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+        gtk_box_append(GTK_BOX(mbox), sep);
+        add_item("Keyboard Shortcuts", "input-keyboard-symbolic", [st](){ show_shortcuts_dialog(st); });
+        add_item("About HAZF", "help-about-symbolic", [st](){ show_about_dialog(st); });
+        gtk_popover_set_child(GTK_POPOVER(menu_pop), mbox);
     }
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), menu_btn);
 
     GtkWidget *about_btn = gtk_button_new_from_icon_name("help-about-symbolic");
     gtk_widget_add_css_class(about_btn, "icon-button");
