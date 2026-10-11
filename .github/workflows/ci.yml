@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "arena/**" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libzstd-dev
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Run smoke tests
+        run: bash tests/smoke.sh
+
+      - name: Test install
+        run: |
+          sudo cmake --install build
+          hazf --help
+
+  package:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libzstd-dev debhelper
+
+      - name: Build package
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+          cd build && cpack -G DEB || echo "cpack deb skipped"
+          ls -lh build/*.deb || true
