@@ -49,7 +49,7 @@ struct AppState {
     GtkWidget *browse_list_container = nullptr; // scroll
     GtkWidget *browse_status = nullptr;
     GtkWidget *browse_search_entry = nullptr;
-    void *browse_store = nullptr; // placeholder
+    GtkStringList *browse_store = nullptr; // we will use custom, but simple ListBox for now
     GtkWidget *browse_listbox = nullptr;
     std::string browse_archive_path;
     std::vector<std::tuple<std::string, uint64_t, uint64_t, uint32_t>> browse_entries;
@@ -103,17 +103,17 @@ progressbar trough { border-radius: 999px; background: alpha(@borders,0.35); min
 progressbar progress { border-radius: 999px; background: linear-gradient(90deg, #3584e4 0%, #62a0ea 100%); }
 .status-ok { background: alpha(#26a269,0.12); color: #26a269; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
 .status-fail { background: alpha(#c01c28,0.12); color: #c01c28; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+popover contents { padding: 6px; border-radius: 12px; }
+popover modelbutton { border-radius: 8px; padding: 6px 10px; }
+.shortcut-row { padding: 6px 0; border-bottom: 1px solid alpha(@borders, 0.3); }
+.shortcut-key { background: alpha(@window_fg_color, 0.08); border: 1px solid alpha(@borders, 0.5); border-bottom-width: 2px; border-radius: 6px; padding: 2px 7px; font-family: monospace; font-size: 11px; font-weight: 700; }
+.icon-button { border-radius: 999px; padding: 6px; }
+.icon-button:hover { background: alpha(@window_fg_color, 0.08); }
 )CSS";
 
 // ---------------------------------------------------------------------------
-// Context menu helpers
-// ---------------------------------------------------------------------------
-static void show_create_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path, int idx);
-static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path);
-static void refresh_create_list(AppState *st);
-static void choose_folder(AppState *st, GtkWindow *parent, std::function<void(std::string)> cb);
-
 // About & Help — complete
+// ---------------------------------------------------------------------------
 static void show_about_dialog(AppState *st) {
     GtkWidget *dlg = gtk_about_dialog_new();
     gtk_about_dialog_set_program_name(GTK_ABOUT_DIALOG(dlg), "HAZF Archive Manager");
@@ -126,11 +126,7 @@ static void show_about_dialog(AppState *st) {
     gtk_about_dialog_set_copyright(GTK_ABOUT_DIALOG(dlg), "© 2026 Hyggshi OS Research Technology");
     const char *authors[] = {"Hyggshi OS Research Technology <tfhy5321@gmail.com>", nullptr};
     gtk_about_dialog_set_authors(GTK_ABOUT_DIALOG(dlg), authors);
-    const char *artists[] = {"HAZF Icon — Hyggshi Design (gradient, shadow, ZSTD badge)", nullptr};
-    gtk_about_dialog_set_artists(GTK_ABOUT_DIALOG(dlg), artists);
     gtk_about_dialog_set_translator_credits(GTK_ABOUT_DIALOG(dlg), "English • Vietnamese");
-    gtk_about_dialog_set_documenters(GTK_ABOUT_DIALOG(dlg), (const char*[]){"HAZF Format v1.0 Spec — docs/HAZF-Format-v1.md", nullptr});
-    gtk_about_dialog_set_wrap_license(GTK_ABOUT_DIALOG(dlg), TRUE);
     gtk_window_set_transient_for(GTK_WINDOW(dlg), st->window);
     gtk_window_present(GTK_WINDOW(dlg));
 }
@@ -143,47 +139,37 @@ static void show_shortcuts_dialog(AppState *st) {
     gtk_window_set_transient_for(GTK_WINDOW(dlg), st->window);
     GtkWidget *header = gtk_header_bar_new();
     GtkWidget *title = gtk_label_new("Shortcuts");
-    gtk_widget_add_css_class(title, "title");
     gtk_header_bar_set_title_widget(GTK_HEADER_BAR(header), title);
     gtk_window_set_titlebar(GTK_WINDOW(dlg), header);
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     gtk_widget_set_margin_top(box, 16); gtk_widget_set_margin_bottom(box, 16);
     gtk_widget_set_margin_start(box, 16); gtk_widget_set_margin_end(box, 16);
-    auto add_row = [&](const char *key, const char *desc){
-        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-        gtk_widget_add_css_class(row, "shortcut-row");
-        GtkWidget *k = gtk_label_new(key);
-        gtk_widget_add_css_class(k, "shortcut-key");
-        gtk_box_append(GTK_BOX(row), k);
-        GtkWidget *d = gtk_label_new(desc);
-        gtk_label_set_xalign(GTK_LABEL(d), 0);
-        gtk_widget_set_hexpand(d, TRUE);
-        gtk_box_append(GTK_BOX(row), d);
-        gtk_box_append(GTK_BOX(box), row);
-    };
-    // Header
     GtkWidget *h1 = gtk_label_new("Mandatory Features — Complete");
     gtk_widget_add_css_class(h1, "card-title");
     gtk_label_set_xalign(GTK_LABEL(h1), 0);
     gtk_box_append(GTK_BOX(box), h1);
-    GtkWidget *desc = gtk_label_new("HAZF supports Create, Browse (List), Extract (no overwrite), Test/Verify (CRC32), Info. All accessible via GUI, context menus and shortcuts.");
+    GtkWidget *desc = gtk_label_new("HAZF supports Create, Browse (List), Extract (no overwrite), Test/Verify (CRC32), Info.");
     gtk_label_set_wrap(GTK_LABEL(desc), TRUE);
     gtk_label_set_xalign(GTK_LABEL(desc), 0);
-    gtk_widget_add_css_class(desc, "card-subtitle");
     gtk_box_append(GTK_BOX(box), desc);
-    GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_box_append(GTK_BOX(box), sep);
+    auto add_row = [&](const char *key, const char *txt){
+        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+        GtkWidget *k = gtk_label_new(key);
+        gtk_widget_add_css_class(k, "shortcut-key");
+        gtk_box_append(GTK_BOX(row), k);
+        GtkWidget *d = gtk_label_new(txt);
+        gtk_widget_set_hexpand(d, TRUE);
+        gtk_label_set_xalign(GTK_LABEL(d), 0);
+        gtk_box_append(GTK_BOX(row), d);
+        gtk_box_append(GTK_BOX(box), row);
+    };
     add_row("Ctrl+N", "New archive — clear create list");
-    add_row("Ctrl+O", "Open .hazf archive (Browse/Extract/Verify)");
+    add_row("Ctrl+O", "Open .hazf archive");
     add_row("Ctrl+E", "Extract archive");
-    add_row("Ctrl+T", "Test / Verify integrity");
-    add_row("Ctrl+I", "Info");
-    add_row("Delete", "Remove selected file (Create) or entry");
     add_row("Right Click", "Context menu — Extract, Copy path, Properties");
     add_row("Drag & Drop", "Drop files/folders onto Create area");
     add_row("F1", "This help");
     GtkWidget *close = gtk_button_new_with_label("Close");
-    gtk_widget_add_css_class(close, "pill");
     gtk_widget_set_halign(close, GTK_ALIGN_END);
     g_signal_connect(close, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_window_destroy(GTK_WINDOW(d)); }), dlg);
     gtk_box_append(GTK_BOX(box), close);
@@ -193,140 +179,21 @@ static void show_shortcuts_dialog(AppState *st) {
     gtk_window_present(GTK_WINDOW(dlg));
 }
 
-static void show_create_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path, int idx) {
-    GtkWidget *custom = gtk_popover_new();
-    gtk_widget_set_parent(custom, widget);
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    gtk_widget_set_margin_top(box, 6); gtk_widget_set_margin_bottom(box, 6);
-    gtk_widget_set_margin_start(box, 6); gtk_widget_set_margin_end(box, 6);
-    auto add_btn = [&](const char *label, const char *icon, auto cb){
-        GtkWidget *b = gtk_button_new();
-        gtk_widget_add_css_class(b, "flat");
-        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        GtkWidget *ic = gtk_image_new_from_icon_name(icon);
-        GtkWidget *lb = gtk_label_new(label);
-        gtk_label_set_xalign(GTK_LABEL(lb), 0);
-        gtk_box_append(GTK_BOX(row), ic);
-        gtk_box_append(GTK_BOX(row), lb);
-        gtk_button_set_child(GTK_BUTTON(b), row);
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
-            auto *pair = (std::pair<AppState*, int>*)d;
-            // placeholder - will be replaced below
-        }), nullptr);
-        gtk_box_append(GTK_BOX(box), b);
-        return b;
-    };
-    // For now, create simple buttons with direct handlers
-    GtkWidget *b1 = gtk_button_new_with_label("Open Containing Folder");
-    // Use flat style
-    // We'll build proper menu with 3 buttons
-    gtk_popover_set_child(GTK_POPOVER(custom), box);
-    // Manually add buttons
-    {
-        GtkWidget *b;
-        b = gtk_button_new();
-        {
-            GtkWidget *r = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-            gtk_box_append(GTK_BOX(r), gtk_image_new_from_icon_name("folder-open-symbolic"));
-            gtk_box_append(GTK_BOX(r), gtk_label_new("Open Containing Folder"));
-            gtk_button_set_child(GTK_BUTTON(b), r);
-        }
-        gtk_widget_add_css_class(b, "flat");
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
-            auto *data = (std::pair<AppState*, std::string>*)d;
-            std::string p = data->second;
-            AppState *s = data->first;
-            // Open folder in file manager
-            std::string dir = std::filesystem::path(p).parent_path().string();
-            if(dir.empty()) dir = ".";
-            std::string cmd = "xdg-open \"" + dir + "\"";
-            (void)system(cmd.c_str());
-            delete data;
-        }), new std::pair<AppState*, std::string>(st, path));
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ GtkWidget *pop = (GtkWidget*)d; gtk_popover_popdown(GTK_POPOVER(pop)); }), custom);
-        gtk_box_append(GTK_BOX(box), b);
-    }
-    {
-        GtkWidget *b = gtk_button_new();
-        {
-            GtkWidget *r = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-            gtk_box_append(GTK_BOX(r), gtk_image_new_from_icon_name("edit-copy-symbolic"));
-            gtk_box_append(GTK_BOX(r), gtk_label_new("Copy Path"));
-            gtk_button_set_child(GTK_BUTTON(b), r);
-        }
-        gtk_widget_add_css_class(b, "flat");
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
-            auto *data = (std::pair<AppState*, std::string>*)d;
-            GdkClipboard *cb = gdk_display_get_clipboard(gdk_display_get_default());
-            gdk_clipboard_set_text(cb, data->second.c_str());
-            delete data;
-        }), new std::pair<AppState*, std::string>(st, path));
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), custom);
-        gtk_box_append(GTK_BOX(box), b);
-    }
-    {
-        GtkWidget *b = gtk_button_new();
-        {
-            GtkWidget *r = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-            auto *ic = gtk_image_new_from_icon_name("user-trash-symbolic");
-            gtk_box_append(GTK_BOX(r), ic);
-            auto *lb = gtk_label_new("Remove");
-            gtk_widget_add_css_class(lb, "error");
-            gtk_box_append(GTK_BOX(r), lb);
-            gtk_button_set_child(GTK_BUTTON(b), r);
-        }
-        gtk_widget_add_css_class(b, "flat");
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
-            auto *data = (std::pair<AppState*, int>*)d;
-            AppState *s = data->first;
-            int idx = data->second;
-            if(idx>=0 && (size_t)idx < s->create_files.size()){
-                s->create_files.erase(s->create_files.begin()+idx);
-                refresh_create_list(s);
-                gtk_widget_set_sensitive(s->create_create_btn, !s->create_files.empty() && !s->create_archive_path.empty());
-            }
-            delete data;
-        }), new std::pair<AppState*, int>(st, idx));
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), custom);
-        gtk_box_append(GTK_BOX(box), b);
-    }
-    GdkRectangle rect = {(int)x, (int)y, 1, 1};
-    gtk_popover_set_pointing_to(GTK_POPOVER(custom), &rect);
-    gtk_popover_set_has_arrow(GTK_POPOVER(custom), TRUE);
-    gtk_popover_popup(GTK_POPOVER(custom));
-    g_signal_connect(custom, "closed", (GCallback)(+[](GtkPopover *pop, gpointer){ gtk_widget_unparent(GTK_WIDGET(pop)); }), nullptr);
-}
+static void show_create_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path, int idx);
+static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path);
+static void refresh_create_list(AppState *st);
+static void choose_folder(AppState *st, GtkWindow *parent, std::function<void(std::string)> cb);
 
-static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path) {
-    GtkWidget *popover = gtk_popover_new();
-    gtk_widget_set_parent(popover, widget);
+// ---------------------------------------------------------------------------
+// Context menu implementations (polished, minimal)
+// ---------------------------------------------------------------------------
+static void show_create_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path, int idx) {
+    GtkWidget *pop = gtk_popover_new();
+    gtk_widget_set_parent(pop, widget);
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
     gtk_widget_set_margin_top(box, 6); gtk_widget_set_margin_bottom(box, 6);
     gtk_widget_set_margin_start(box, 6); gtk_widget_set_margin_end(box, 6);
-    // Extract Selected
-    {
-        GtkWidget *b = gtk_button_new();
-        GtkWidget *r = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        gtk_box_append(GTK_BOX(r), gtk_image_new_from_icon_name("system-run-symbolic"));
-        gtk_box_append(GTK_BOX(r), gtk_label_new("Extract Selected"));
-        gtk_button_set_child(GTK_BUTTON(b), r);
-        gtk_widget_add_css_class(b, "flat");
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
-            auto *data = (std::pair<AppState*, std::string>*)d;
-            AppState *s = data->first;
-            std::string p = data->second;
-            // Trigger extract to chosen folder
-            choose_folder(s, s->window, [s,p](std::string dest){
-                // For demo, just show message that would extract single entry
-                GtkWidget *dlg = gtk_message_dialog_new(s->window, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK, "Would extract:\n%s\nTo: %s", p.c_str(), dest.c_str());
-                gtk_window_present(GTK_WINDOW(dlg));
-                g_signal_connect(dlg, "response", (GCallback)(+[](GtkDialog *d,int,gpointer){ gtk_window_destroy(GTK_WINDOW(d)); }), nullptr);
-            });
-            delete data;
-        }), new std::pair<AppState*, std::string>(st, path));
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), popover);
-        gtk_box_append(GTK_BOX(box), b);
-    }
+    // Copy Path
     {
         GtkWidget *b = gtk_button_new();
         GtkWidget *r = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -340,7 +207,58 @@ static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppS
             gdk_clipboard_set_text(cb, data->second.c_str());
             delete data;
         }), new std::pair<AppState*, std::string>(st, path));
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), popover);
+        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), pop);
+        gtk_box_append(GTK_BOX(box), b);
+    }
+    // Remove
+    {
+        GtkWidget *b = gtk_button_new();
+        GtkWidget *r = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_box_append(GTK_BOX(r), gtk_image_new_from_icon_name("user-trash-symbolic"));
+        gtk_box_append(GTK_BOX(r), gtk_label_new("Remove"));
+        gtk_button_set_child(GTK_BUTTON(b), r);
+        gtk_widget_add_css_class(b, "flat");
+        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
+            auto *data = (std::pair<AppState*, int>*)d;
+            AppState *s = data->first;
+            int i = data->second;
+            if(i>=0 && (size_t)i < s->create_files.size()){
+                s->create_files.erase(s->create_files.begin()+i);
+                refresh_create_list(s);
+                gtk_widget_set_sensitive(s->create_create_btn, !s->create_files.empty() && !s->create_archive_path.empty());
+            }
+            delete data;
+        }), new std::pair<AppState*, int>(st, idx));
+        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), pop);
+        gtk_box_append(GTK_BOX(box), b);
+    }
+    gtk_popover_set_child(GTK_POPOVER(pop), box);
+    GdkRectangle rect = {(int)x, (int)y, 1, 1};
+    gtk_popover_set_pointing_to(GTK_POPOVER(pop), &rect);
+    gtk_popover_popup(GTK_POPOVER(pop));
+    g_signal_connect(pop, "closed", (GCallback)(+[](GtkPopover *p, gpointer){ gtk_widget_unparent(GTK_WIDGET(p)); }), nullptr);
+}
+
+static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path) {
+    GtkWidget *pop = gtk_popover_new();
+    gtk_widget_set_parent(pop, widget);
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_widget_set_margin_top(box, 6); gtk_widget_set_margin_bottom(box, 6);
+    gtk_widget_set_margin_start(box, 6); gtk_widget_set_margin_end(box, 6);
+    {
+        GtkWidget *b = gtk_button_new();
+        GtkWidget *r = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_box_append(GTK_BOX(r), gtk_image_new_from_icon_name("edit-copy-symbolic"));
+        gtk_box_append(GTK_BOX(r), gtk_label_new("Copy Path"));
+        gtk_button_set_child(GTK_BUTTON(b), r);
+        gtk_widget_add_css_class(b, "flat");
+        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
+            auto *data = (std::pair<AppState*, std::string>*)d;
+            GdkClipboard *cb = gdk_display_get_clipboard(gdk_display_get_default());
+            gdk_clipboard_set_text(cb, data->second.c_str());
+            delete data;
+        }), new std::pair<AppState*, std::string>(st, path));
+        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), pop);
         gtk_box_append(GTK_BOX(box), b);
     }
     {
@@ -354,11 +272,10 @@ static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppS
             auto *data = (std::pair<AppState*, std::string>*)d;
             AppState *s = data->first;
             std::string p = data->second;
-            // Find entry details
             for(auto &e: s->browse_entries){
                 if(std::get<0>(e)==p){
                     char msg[512];
-                    snprintf(msg,sizeof(msg),"Path: %s\nOriginal: %llu bytes\nCompressed: %llu bytes\nCRC32: %08x\n\nHAZF uses Zstandard and CRC32 (IEEE).", p.c_str(), (unsigned long long)std::get<1>(e), (unsigned long long)std::get<2>(e), std::get<3>(e));
+                    snprintf(msg,sizeof(msg),"Path: %s\nOriginal: %llu bytes\nCompressed: %llu bytes\nCRC32: %08x", p.c_str(), (unsigned long long)std::get<1>(e), (unsigned long long)std::get<2>(e), std::get<3>(e));
                     GtkWidget *dlg = gtk_message_dialog_new(s->window, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK, "%s", msg);
                     gtk_window_present(GTK_WINDOW(dlg));
                     g_signal_connect(dlg, "response", (GCallback)(+[](GtkDialog *d,int,gpointer){ gtk_window_destroy(GTK_WINDOW(d)); }), nullptr);
@@ -367,15 +284,14 @@ static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppS
             }
             delete data;
         }), new std::pair<AppState*, std::string>(st, path));
-        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), popover);
+        g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), pop);
         gtk_box_append(GTK_BOX(box), b);
     }
-    gtk_popover_set_child(GTK_POPOVER(popover), box);
-    GdkRectangle rect2 = {(int)x, (int)y, 1, 1};
-    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect2);
-    gtk_popover_set_has_arrow(GTK_POPOVER(popover), TRUE);
-    gtk_popover_popup(GTK_POPOVER(popover));
-    g_signal_connect(popover, "closed", (GCallback)(+[](GtkPopover *pop, gpointer){ gtk_widget_unparent(GTK_WIDGET(pop)); }), nullptr);
+    gtk_popover_set_child(GTK_POPOVER(pop), box);
+    GdkRectangle rect = {(int)x, (int)y, 1, 1};
+    gtk_popover_set_pointing_to(GTK_POPOVER(pop), &rect);
+    gtk_popover_popup(GTK_POPOVER(pop));
+    g_signal_connect(pop, "closed", (GCallback)(+[](GtkPopover *p, gpointer){ gtk_widget_unparent(GTK_WIDGET(p)); }), nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -561,14 +477,12 @@ static void refresh_create_list(AppState *st) {
         {
             GtkGesture *gest = gtk_gesture_click_new();
             gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gest), 3);
-            // Capture path and idx by value via struct
             struct Ctx { AppState *st; std::string path; int idx; GtkWidget *row; };
             auto *ctx = new Ctx{st, p, (int)i, row};
             g_signal_connect(gest, "pressed", (GCallback)(+[](GtkGesture *g, int n_press, double x, double y, gpointer data){
                 auto *c = (Ctx*)data;
                 if (n_press==1) show_create_context_menu(c->row, x, y, c->st, c->path, c->idx);
             }), ctx);
-            // Also handle long-press for touch
             gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(gest));
         }
         gtk_list_box_append(GTK_LIST_BOX(st->create_file_listbox), row);
@@ -1567,7 +1481,7 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(brand_box), ver);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), brand_box);
 
-    // Primary menu — simple popover (polished, no GAction complexity for CI robustness)
+    // Primary menu — simple popover (complete mandatory features)
     GtkWidget *menu_btn = gtk_menu_button_new();
     gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(menu_btn), "open-menu-symbolic");
     gtk_widget_add_css_class(menu_btn, "icon-button");
@@ -1590,7 +1504,6 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
                 (*func)();
                 delete func;
             }), new std::function<void()>(cb));
-            // also close popover on click
             g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), menu_pop);
             gtk_box_append(GTK_BOX(mbox), b);
         };
