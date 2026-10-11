@@ -14,6 +14,7 @@
 
 #include <zstd.h>
 #include "hazf/format.hpp"
+#include <functional>
 
 namespace fs = std::filesystem;
 using namespace hazf;
@@ -268,16 +269,8 @@ static void refresh_create_list(AppState *st) {
         gtk_widget_add_css_class(removeBtn, "icon-button");
         gtk_widget_set_valign(removeBtn, GTK_ALIGN_CENTER);
         size_t idx = i;
-        g_signal_connect(removeBtn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data){
-            AppState *s = (AppState*)data;
-            // find which row? we captured idx but after removal indices shift; instead find via pointer
-            // We'll handle by re-searching: remove by index captured at creation time is stale after removals
-            // So we store index pointer and search
-        }), st);
-        // Instead use closure with index capture via lambda needing careful
-        // We'll do a hack: store index as widget data and lookup file path
         g_object_set_data(G_OBJECT(removeBtn), "idx", GINT_TO_POINTER((int)idx));
-        g_signal_connect(removeBtn, "clicked", G_CALLBACK(+[](GtkButton *btn, gpointer data){
+        g_signal_connect(removeBtn, "clicked", (GCallback)(+[](GtkButton *btn, gpointer data){
             AppState *s = (AppState*)data;
             int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(btn), "idx"));
             if (idx >=0 && (size_t)idx < s->create_files.size()) {
@@ -325,12 +318,12 @@ static void choose_archive_save(AppState *st, GtkWindow *parent, std::function<v
         delete func;
     }, new std::function<void(std::string)>(cb));
 #else
-    GtkWidget *dlg = gtk_file_chooser_native_new("Choose HAZF Archive", parent, GTK_FILE_CHOOSER_ACTION_SAVE, "_Save", "_Cancel");
+    GtkFileChooserNative *dlg = gtk_file_chooser_native_new("Choose HAZF Archive", parent, GTK_FILE_CHOOSER_ACTION_SAVE, "_Save", "_Cancel");
     GtkFileFilter *f = gtk_file_filter_new();
     gtk_file_filter_set_name(f, "HAZF Archive (*.hazf)");
     gtk_file_filter_add_pattern(f, "*.hazf");
     gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dlg), f);
-    g_signal_connect(dlg, "response", G_CALLBACK(+[](GtkNativeDialog *d, int resp, gpointer data){
+    g_signal_connect(dlg, "response", (GCallback)(+[](GtkNativeDialog *d, int resp, gpointer data){
         auto *func = (std::function<void(std::string)>*)data;
         if (resp == GTK_RESPONSE_ACCEPT) {
             char *path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(d));
@@ -365,12 +358,12 @@ static void choose_archive_open(AppState *st, GtkWindow *parent, std::function<v
         delete func;
     }, new std::function<void(std::string)>(cb));
 #else
-    GtkWidget *dlg = gtk_file_chooser_native_new("Open HAZF Archive", parent, GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
+    GtkFileChooserNative *dlg = gtk_file_chooser_native_new("Open HAZF Archive", parent, GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
     GtkFileFilter *f = gtk_file_filter_new();
     gtk_file_filter_set_name(f, "HAZF Archive (*.hazf)");
     gtk_file_filter_add_pattern(f, "*.hazf");
     gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dlg), f);
-    g_signal_connect(dlg, "response", G_CALLBACK(+[](GtkNativeDialog *d, int resp, gpointer data){
+    g_signal_connect(dlg, "response", (GCallback)(+[](GtkNativeDialog *d, int resp, gpointer data){
         auto *func = (std::function<void(std::string)>*)data;
         if (resp == GTK_RESPONSE_ACCEPT) {
             char *path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(d));
@@ -385,34 +378,48 @@ static void choose_archive_open(AppState *st, GtkWindow *parent, std::function<v
 
 static void choose_files_open(AppState *st, GtkWindow *parent, std::function<void(std::vector<std::string>)> cb) {
 #if GTK_CHECK_VERSION(4,10,0)
-    GtkFileDialog *dlg = gtk_file_dialog_new();
-    gtk_file_dialog_set_title(dlg, "Add Files or Folders");
-    // allow multiple? GtkFileDialog doesn't multi; fallback to native for multi
-    // Use native for multi
-    GtkWidget *native = gtk_file_chooser_native_new("Add Files or Folders", parent, GTK_FILE_CHOOSER_ACTION_OPEN, "_Add", "_Cancel");
+    // For multiple selection, use GtkFileChooserNative (still available but deprecated)
+    // GTK 4.10+ also has GtkFileDialog::open_multiple, but we keep native for simplicity
+    GtkFileChooserNative *native = gtk_file_chooser_native_new("Add Files or Folders", parent, GTK_FILE_CHOOSER_ACTION_OPEN, "_Add", "_Cancel");
     gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(native), TRUE);
-    g_signal_connect(native, "response", G_CALLBACK(+[](GtkNativeDialog *d, int resp, gpointer data){
+    g_signal_connect(native, "response", (GCallback)(+[](GtkNativeDialog *d, int resp, gpointer data){
         auto *func = (std::function<void(std::vector<std::string>)>*)data;
         if (resp==GTK_RESPONSE_ACCEPT) {
+#if GTK_CHECK_VERSION(4,10,0)
+            // GTK4: get_files returns GListModel
+            GListModel *files = gtk_file_chooser_get_files(GTK_FILE_CHOOSER(d));
+            guint n = g_list_model_get_n_items(files);
+            std::vector<std::string> out;
+            out.reserve(n);
+            for (guint i=0; i<n; ++i) {
+                GFile *f = G_FILE(g_list_model_get_item(files, i));
+                char *path = g_file_get_path(f);
+                if (path) { out.emplace_back(std::string(path)); g_free(path); }
+                g_object_unref(f);
+            }
+            g_object_unref(files);
+            (*func)(out);
+#else
             GSList *files = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(d));
             std::vector<std::string> out;
-            for (GSList *l=files;l;l=l->next) { out.emplace_back((char*)l->data); g_free(l->data); }
+            for (GSList *l=files; l; l=l->next) { out.emplace_back((char*)l->data); g_free(l->data); }
             g_slist_free(files);
             (*func)(out);
+#endif
         }
         g_object_unref(d);
         delete func;
     }), new std::function<void(std::vector<std::string>)>(cb));
     gtk_native_dialog_show(GTK_NATIVE_DIALOG(native));
 #else
-    GtkWidget *dlg = gtk_file_chooser_native_new("Add Files or Folders", parent, GTK_FILE_CHOOSER_ACTION_OPEN, "_Add", "_Cancel");
+    GtkFileChooserNative *dlg = gtk_file_chooser_native_new("Add Files or Folders", parent, GTK_FILE_CHOOSER_ACTION_OPEN, "_Add", "_Cancel");
     gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dlg), TRUE);
-    g_signal_connect(dlg, "response", G_CALLBACK(+[](GtkNativeDialog *d, int resp, gpointer data){
+    g_signal_connect(dlg, "response", (GCallback)(+[](GtkNativeDialog *d, int resp, gpointer data){
         auto *func = (std::function<void(std::vector<std::string>)>*)data;
         if (resp==GTK_RESPONSE_ACCEPT) {
             GSList *files = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(d));
             std::vector<std::string> out;
-            for (GSList *l=files;l;l=l->next) { out.emplace_back((char*)l->data); g_free(l->data); }
+            for (GSList *l=files; l; l=l->next) { out.emplace_back((char*)l->data); g_free(l->data); }
             g_slist_free(files);
             (*func)(out);
         }
@@ -435,8 +442,8 @@ static void choose_folder(AppState *st, GtkWindow *parent, std::function<void(st
         delete func;
     }, new std::function<void(std::string)>(cb));
 #else
-    GtkWidget *dlg = gtk_file_chooser_native_new("Choose Folder", parent, GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "_Select", "_Cancel");
-    g_signal_connect(dlg, "response", G_CALLBACK(+[](GtkNativeDialog *d,int resp,gpointer data){
+    GtkFileChooserNative *dlg = gtk_file_chooser_native_new("Choose Folder", parent, GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "_Select", "_Cancel");
+    g_signal_connect(dlg, "response", (GCallback)(+[](GtkNativeDialog *d,int resp,gpointer data){
         auto *func=(std::function<void(std::string)>*)data;
         if(resp==GTK_RESPONSE_ACCEPT){ char *p=gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(d)); if(p){(*func)(std::string(p)); g_free(p);} }
         g_object_unref(d); delete func;
@@ -468,12 +475,12 @@ static gboolean create_done(gpointer data) {
         // also show dialog
         GtkWidget *dlg = gtk_message_dialog_new(st->window, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK, "Archive created:\n%s", job->archive.c_str());
         gtk_window_present(GTK_WINDOW(dlg));
-        g_signal_connect(dlg, "response", G_CALLBACK(+[](GtkDialog *d, int, gpointer){ gtk_window_destroy(GTK_WINDOW(d)); }), nullptr);
+        g_signal_connect(dlg, "response", (GCallback)(+[](GtkDialog *d, int, gpointer){ gtk_window_destroy(GTK_WINDOW(d)); }), nullptr);
     } else {
         set_status(st->create_status, "✗ Failed: " + job->error, true);
         GtkWidget *dlg = gtk_message_dialog_new(st->window, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK, "Failed to create archive:\n%s", job->error.c_str());
         gtk_window_present(GTK_WINDOW(dlg));
-        g_signal_connect(dlg, "response", G_CALLBACK(+[](GtkDialog *d, int, gpointer){ gtk_window_destroy(GTK_WINDOW(d)); }), nullptr);
+        g_signal_connect(dlg, "response", (GCallback)(+[](GtkDialog *d, int, gpointer){ gtk_window_destroy(GTK_WINDOW(d)); }), nullptr);
     }
     delete job;
     return G_SOURCE_REMOVE;
@@ -655,11 +662,11 @@ static gboolean extract_done(gpointer data){
     if(job->success){
         GtkWidget *dlg=gtk_message_dialog_new(st->window, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK, "Extracted %d files to\n%s", job->extracted, job->dest.c_str());
         gtk_window_present(GTK_WINDOW(dlg));
-        g_signal_connect(dlg,"response",G_CALLBACK(+[](GtkDialog*d,int,gpointer){gtk_window_destroy(GTK_WINDOW(d));}),nullptr);
+        g_signal_connect(dlg,"response",(GCallback)(+[](GtkDialog*d,int,gpointer){gtk_window_destroy(GTK_WINDOW(d));}),nullptr);
     } else if(!job->error.empty()){
         GtkWidget *dlg=gtk_message_dialog_new(st->window, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK, "Extract failed:\n%s", job->error.c_str());
         gtk_window_present(GTK_WINDOW(dlg));
-        g_signal_connect(dlg,"response",G_CALLBACK(+[](GtkDialog*d,int,gpointer){gtk_window_destroy(GTK_WINDOW(d));}),nullptr);
+        g_signal_connect(dlg,"response",(GCallback)(+[](GtkDialog*d,int,gpointer){gtk_window_destroy(GTK_WINDOW(d));}),nullptr);
     }
     delete job;
     return G_SOURCE_REMOVE;
@@ -850,7 +857,7 @@ static GtkWidget* build_create_page(AppState *st) {
 
     // Drop target
     GtkDropTarget *drop = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
-    g_signal_connect(drop, "drop", G_CALLBACK(+[](GtkDropTarget*, const GValue *val, double, double, gpointer data)->gboolean{
+    g_signal_connect(drop, "drop", (GCallback)(+[](GtkDropTarget*, const GValue *val, double, double, gpointer data)->gboolean{
         AppState *s=(AppState*)data;
         if (G_VALUE_HOLDS(val, GDK_TYPE_FILE_LIST)) {
             GSList *files = (GSList*)g_value_get_boxed(val);
@@ -864,12 +871,12 @@ static GtkWidget* build_create_page(AppState *st) {
         }
         return TRUE;
     }), st);
-    g_signal_connect(drop, "enter", G_CALLBACK(+[](GtkDropTarget*, double, double, gpointer data)->GdkDragAction{
+    g_signal_connect(drop, "enter", (GCallback)(+[](GtkDropTarget*, double, double, gpointer data)->GdkDragAction{
         AppState *s=(AppState*)data; gtk_widget_add_css_class(s->create_drop_area, "drag-over"); return GDK_ACTION_COPY;
     }), st);
-    g_signal_connect(drop, "leave", G_CALLBACK(+[](GtkDropTarget*, gpointer data){ AppState *s=(AppState*)data; gtk_widget_remove_css_class(s->create_drop_area, "drag-over"); }), st);
+    g_signal_connect(drop, "leave", (GCallback)(+[](GtkDropTarget*, gpointer data){ AppState *s=(AppState*)data; gtk_widget_remove_css_class(s->create_drop_area, "drag-over"); }), st);
     gtk_widget_add_controller(st->create_drop_area, GTK_EVENT_CONTROLLER(drop));
-    g_signal_connect(add_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data){
+    g_signal_connect(add_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer data){
         AppState *s=(AppState*)data;
         choose_files_open(s, s->window, [s](std::vector<std::string> files){
             for(auto &f: files) s->create_files.push_back(f);
@@ -908,7 +915,7 @@ static GtkWidget* build_create_page(AppState *st) {
     gtk_widget_add_css_class(st->create_archive_choose_btn, "pill");
     gtk_box_append(GTK_BOX(arc_box), st->create_archive_choose_btn);
     gtk_box_append(GTK_BOX(root), arc_box);
-    g_signal_connect(st->create_archive_choose_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data){
+    g_signal_connect(st->create_archive_choose_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer data){
         AppState *s=(AppState*)data;
         choose_archive_save(s, s->window, [s](std::string p){
             if(!p.ends_with(".hazf")) p+=".hazf";
@@ -917,7 +924,7 @@ static GtkWidget* build_create_page(AppState *st) {
             gtk_widget_set_sensitive(s->create_create_btn, !s->create_files.empty() && !p.empty());
         });
     }), st);
-    g_signal_connect(st->create_archive_entry, "changed", G_CALLBACK(+[](GtkEditable*, gpointer data){
+    g_signal_connect(st->create_archive_entry, "changed", (GCallback)(+[](GtkEditable*, gpointer data){
         AppState *s=(AppState*)data;
         const char *t = gtk_editable_get_text(GTK_EDITABLE(s->create_archive_entry));
         s->create_archive_path = t ? std::string(t) : "";
@@ -948,7 +955,7 @@ static GtkWidget* build_create_page(AppState *st) {
     gtk_box_append(GTK_BOX(btn_box), st->create_create_btn);
     gtk_box_append(GTK_BOX(root), btn_box);
 
-    g_signal_connect(st->create_clear_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data){
+    g_signal_connect(st->create_clear_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer data){
         AppState *s=(AppState*)data;
         s->create_files.clear();
         refresh_create_list(s);
@@ -966,7 +973,7 @@ static GtkWidget* build_create_page(AppState *st) {
     gtk_widget_add_css_class(st->create_status, "file-meta");
     gtk_box_append(GTK_BOX(root), st->create_status);
 
-    g_signal_connect(st->create_create_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data){
+    g_signal_connect(st->create_create_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer data){
         AppState *s=(AppState*)data;
         if(s->create_files.empty() || s->create_archive_path.empty()){ set_status(s->create_status, "Add files and choose archive path", true); return; }
         gtk_widget_set_sensitive(s->create_create_btn, FALSE);
@@ -1022,7 +1029,7 @@ static GtkWidget* build_browse_page(AppState *st) {
     gtk_entry_set_placeholder_text(GTK_ENTRY(st->browse_search_entry), "Filter files…");
     gtk_widget_add_css_class(st->browse_search_entry, "pill");
     gtk_box_append(GTK_BOX(root), st->browse_search_entry);
-    g_signal_connect(st->browse_search_entry, "search-changed", G_CALLBACK(+[](GtkSearchEntry*, gpointer data){
+    g_signal_connect(st->browse_search_entry, "search-changed", (GCallback)(+[](GtkSearchEntry*, gpointer data){
         AppState *s=(AppState*)data; refresh_browse_list(s);
     }), st);
 
@@ -1042,7 +1049,7 @@ static GtkWidget* build_browse_page(AppState *st) {
     gtk_label_set_xalign(GTK_LABEL(st->browse_status),0);
     gtk_box_append(GTK_BOX(root), st->browse_status);
 
-    g_signal_connect(st->browse_choose_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data){
+    g_signal_connect(st->browse_choose_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer data){
         AppState *s=(AppState*)data;
         choose_archive_open(s, s->window, [s](std::string p){
             s->browse_archive_path=p;
@@ -1050,13 +1057,13 @@ static GtkWidget* build_browse_page(AppState *st) {
             do_browse_open(s);
         });
     }), st);
-    g_signal_connect(st->browse_open_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data){
+    g_signal_connect(st->browse_open_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer data){
         AppState *s=(AppState*)data;
         const char *t=gtk_editable_get_text(GTK_EDITABLE(s->browse_archive_entry));
         if(t) s->browse_archive_path=t;
         do_browse_open(s);
     }), st);
-    g_signal_connect(st->browse_archive_entry, "activate", G_CALLBACK(+[](GtkEntry*, gpointer data){
+    g_signal_connect(st->browse_archive_entry, "activate", (GCallback)(+[](GtkEntry*, gpointer data){
         AppState *s=(AppState*)data;
         const char *t=gtk_editable_get_text(GTK_EDITABLE(s->browse_archive_entry));
         if(t) s->browse_archive_path=t;
@@ -1126,27 +1133,27 @@ static GtkWidget* build_extract_page(AppState *st) {
     gtk_widget_add_css_class(st->extract_status,"file-meta");
     gtk_box_append(GTK_BOX(root), st->extract_status);
 
-    g_signal_connect(st->extract_archive_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer d){
+    g_signal_connect(st->extract_archive_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
         AppState *s=(AppState*)d;
         choose_archive_open(s, s->window, [s](std::string p){
             s->extract_archive_path=p;
             gtk_editable_set_text(GTK_EDITABLE(s->extract_archive_entry), p.c_str());
         });
     }), st);
-    g_signal_connect(st->extract_archive_entry, "changed", G_CALLBACK(+[](GtkEditable*, gpointer d){
+    g_signal_connect(st->extract_archive_entry, "changed", (GCallback)(+[](GtkEditable*, gpointer d){
         AppState *s=(AppState*)d; const char *t=gtk_editable_get_text(GTK_EDITABLE(s->extract_archive_entry)); s->extract_archive_path=t?t:"";
     }), st);
-    g_signal_connect(st->extract_dest_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer d){
+    g_signal_connect(st->extract_dest_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
         AppState *s=(AppState*)d;
         choose_folder(s, s->window, [s](std::string p){
             s->extract_dest_path=p;
             gtk_editable_set_text(GTK_EDITABLE(s->extract_dest_entry), p.c_str());
         });
     }), st);
-    g_signal_connect(st->extract_dest_entry, "changed", G_CALLBACK(+[](GtkEditable*, gpointer d){
+    g_signal_connect(st->extract_dest_entry, "changed", (GCallback)(+[](GtkEditable*, gpointer d){
         AppState *s=(AppState*)d; const char *t=gtk_editable_get_text(GTK_EDITABLE(s->extract_dest_entry)); s->extract_dest_path=t?t:"";
     }), st);
-    g_signal_connect(st->extract_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer d){
+    g_signal_connect(st->extract_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
         AppState *s=(AppState*)d;
         if(s->extract_archive_path.empty()){ set_status(s->extract_status,"Choose an archive",true); return; }
         std::string dest = s->extract_dest_path.empty()? std::string(".") : s->extract_dest_path;
@@ -1207,7 +1214,7 @@ static GtkWidget* build_info_page(AppState *st) {
     gtk_label_set_xalign(GTK_LABEL(st->info_status),0);
     gtk_box_append(GTK_BOX(root), st->info_status);
 
-    g_signal_connect(st->info_choose_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer d){
+    g_signal_connect(st->info_choose_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
         AppState *s=(AppState*)d;
         choose_archive_open(s, s->window, [s](std::string p){
             s->info_archive_path=p;
@@ -1215,10 +1222,10 @@ static GtkWidget* build_info_page(AppState *st) {
             // auto verify?
         });
     }), st);
-    g_signal_connect(st->info_archive_entry, "changed", G_CALLBACK(+[](GtkEditable*, gpointer d){
+    g_signal_connect(st->info_archive_entry, "changed", (GCallback)(+[](GtkEditable*, gpointer d){
         AppState *s=(AppState*)d; const char *t=gtk_editable_get_text(GTK_EDITABLE(s->info_archive_entry)); s->info_archive_path=t?t:"";
     }), st);
-    g_signal_connect(st->info_test_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer d){
+    g_signal_connect(st->info_test_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
         AppState *s=(AppState*)d;
         if(s->info_archive_path.empty()){ const char *t=gtk_editable_get_text(GTK_EDITABLE(s->info_archive_entry)); if(t) s->info_archive_path=t; }
         if(s->info_archive_path.empty()){ set_status(s->info_status,"Choose an archive first",true); return; }
@@ -1266,7 +1273,7 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_add_css_class(about_btn, "icon-button");
     gtk_widget_set_tooltip_text(about_btn, "About HAZF");
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), about_btn);
-    g_signal_connect(about_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data){
+    g_signal_connect(about_btn, "clicked", (GCallback)(+[](GtkButton*, gpointer data){
         AppState *s=(AppState*)data;
         GtkWidget *dlg = gtk_about_dialog_new();
         gtk_about_dialog_set_program_name(GTK_ABOUT_DIALOG(dlg), "HAZF Archive Manager");
@@ -1318,20 +1325,25 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
 int main(int argc, char *argv[]) {
     g_state = new AppState();
     GtkApplication *app = gtk_application_new("com.hyggshi.hazf", G_APPLICATION_HANDLES_OPEN);
-    g_signal_connect(app, "activate", G_CALLBACK(on_activate), g_state);
+    g_signal_connect(app, "activate", (GCallback)(on_activate), g_state);
 
     // if launched with file, open browse
-    g_signal_connect(app, "open", G_CALLBACK(+[](GtkApplication *a, GFile **files, gint n, gchar*, gpointer data){
+    g_signal_connect(app, "open", (GCallback)(+[](GtkApplication *a, GFile **files, gint n, gchar*, gpointer data){
         AppState *s=(AppState*)data;
         g_signal_emit_by_name(a, "activate");
         // defer until window exists
+        struct OpenIdle { AppState *s; gint n; };
+        auto *od = new OpenIdle{s, n};
         g_idle_add([](gpointer d)->gboolean{
-            AppState *s=(AppState*)d;
+            auto *od=(OpenIdle*)d;
+            AppState *s=od->s;
+            gint n=od->n;
             if(s->window && n>0){
                 // not fully handled here
             }
+            delete od;
             return G_SOURCE_REMOVE;
-        }, s);
+        }, od);
     }), g_state);
 
     int status = g_application_run(G_APPLICATION(app), argc, argv);
