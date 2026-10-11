@@ -179,6 +179,9 @@ static void show_shortcuts_dialog(AppState *st) {
     gtk_window_present(GTK_WINDOW(dlg));
 }
 
+using PairStr = PairStr;
+using PairInt = PairInt;
+
 static void show_create_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path, int idx);
 static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path);
 static void refresh_create_list(AppState *st);
@@ -187,6 +190,9 @@ static void choose_folder(AppState *st, GtkWindow *parent, std::function<void(st
 // ---------------------------------------------------------------------------
 // Context menu implementations (polished, minimal)
 // ---------------------------------------------------------------------------
+using PairStr = PairStr;
+using PairInt = PairInt;
+
 static void show_create_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path, int idx) {
     GtkWidget *pop = gtk_popover_new();
     gtk_widget_set_parent(pop, widget);
@@ -202,11 +208,11 @@ static void show_create_context_menu(GtkWidget *widget, double x, double y, AppS
         gtk_button_set_child(GTK_BUTTON(b), r);
         gtk_widget_add_css_class(b, "flat");
         g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
-            auto *data = (std::pair<AppState*, std::string>*)d;
+            auto *data = (PairStr*)d;
             GdkClipboard *cb = gdk_display_get_clipboard(gdk_display_get_default());
             gdk_clipboard_set_text(cb, data->second.c_str());
             delete data;
-        }), new std::pair<AppState*, std::string>(st, path));
+        }), new PairStr(st, path));
         g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), pop);
         gtk_box_append(GTK_BOX(box), b);
     }
@@ -219,7 +225,7 @@ static void show_create_context_menu(GtkWidget *widget, double x, double y, AppS
         gtk_button_set_child(GTK_BUTTON(b), r);
         gtk_widget_add_css_class(b, "flat");
         g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
-            auto *data = (std::pair<AppState*, int>*)d;
+            auto *data = (PairInt*)d;
             AppState *s = data->first;
             int i = data->second;
             if(i>=0 && (size_t)i < s->create_files.size()){
@@ -228,7 +234,7 @@ static void show_create_context_menu(GtkWidget *widget, double x, double y, AppS
                 gtk_widget_set_sensitive(s->create_create_btn, !s->create_files.empty() && !s->create_archive_path.empty());
             }
             delete data;
-        }), new std::pair<AppState*, int>(st, idx));
+        }), new PairInt(st, idx));
         g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), pop);
         gtk_box_append(GTK_BOX(box), b);
     }
@@ -253,11 +259,11 @@ static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppS
         gtk_button_set_child(GTK_BUTTON(b), r);
         gtk_widget_add_css_class(b, "flat");
         g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
-            auto *data = (std::pair<AppState*, std::string>*)d;
+            auto *data = (PairStr*)d;
             GdkClipboard *cb = gdk_display_get_clipboard(gdk_display_get_default());
             gdk_clipboard_set_text(cb, data->second.c_str());
             delete data;
-        }), new std::pair<AppState*, std::string>(st, path));
+        }), new PairStr(st, path));
         g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), pop);
         gtk_box_append(GTK_BOX(box), b);
     }
@@ -269,7 +275,7 @@ static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppS
         gtk_button_set_child(GTK_BUTTON(b), r);
         gtk_widget_add_css_class(b, "flat");
         g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){
-            auto *data = (std::pair<AppState*, std::string>*)d;
+            auto *data = (PairStr*)d;
             AppState *s = data->first;
             std::string p = data->second;
             for(auto &e: s->browse_entries){
@@ -283,7 +289,7 @@ static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppS
                 }
             }
             delete data;
-        }), new std::pair<AppState*, std::string>(st, path));
+        }), new PairStr(st, path));
         g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), pop);
         gtk_box_append(GTK_BOX(box), b);
     }
