@@ -34,21 +34,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Build failed — capturing log"
-          cat /tmp/build.log 2>/dev/null | tail -n 400 || echo "no log"
-          LOG="$(cat /tmp/build.log 2>/dev/null | tail -c 50000)"
+          cat /tmp/build.log 2>/dev/null | tail -n 600 || echo "no log"
+          # prepare comment body via commit comment (api.github.com allowed)
+          LOG="$(cat /tmp/build.log 2>/dev/null | tail -c 45000)"
           if [ -z "$LOG" ]; then LOG="empty log"; fi
-          # create gist via api.github.com (allowed)
-          echo "$LOG" > /tmp/log.txt
-          # Use gh api to create gist - escape content via jq if available
-          if command -v jq >/dev/null 2>&1; then
-            CONTENT=$(jq -Rs . < /tmp/log.txt)
-            PAYLOAD=$(jq -n --arg c "$(cat /tmp/log.txt)" '{public:false, description:"HAZF build log", files: {"build.log": {content: $c}}}')
-            echo "$PAYLOAD" | gh api gists -X POST --input - > /tmp/gist.json || echo "gist failed"
-            cat /tmp/gist.json || true
-          else
-            # fallback: just print
-            cat /tmp/log.txt
-          fi
+          SHA=$(git rev-parse HEAD)
+          echo "Posting comment on $SHA"
+          # Use gh api to post commit comment — truncate to 60000 chars max (API limit)
+          BODY=$(printf '```\n%s\n```' "$LOG" | head -c 60000)
+          PAYLOAD=$(jq -n --arg body "$BODY" '{body: $body}')
+          echo "$PAYLOAD" | gh api "repos/Hyggshi-OS-Research-Technology/HAZF/commits/$SHA/comments" -X POST --input - > /tmp/comment.json || echo "comment failed"
+          cat /tmp/comment.json || true
+          echo "Done"
+
 
       - name: Run smoke tests
         run: bash tests/smoke.sh
