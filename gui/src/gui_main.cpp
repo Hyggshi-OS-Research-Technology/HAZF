@@ -49,7 +49,7 @@ struct AppState {
     GtkWidget *browse_list_container = nullptr; // scroll
     GtkWidget *browse_status = nullptr;
     GtkWidget *browse_search_entry = nullptr;
-    GtkStringList *browse_store = nullptr; // we will use custom, but simple ListBox for now
+    void *browse_store = nullptr; // placeholder
     GtkWidget *browse_listbox = nullptr;
     std::string browse_archive_path;
     std::vector<std::tuple<std::string, uint64_t, uint64_t, uint32_t>> browse_entries;
@@ -304,7 +304,8 @@ static void show_create_context_menu(GtkWidget *widget, double x, double y, AppS
         g_signal_connect(b, "clicked", (GCallback)(+[](GtkButton*, gpointer d){ gtk_popover_popdown(GTK_POPOVER((GtkWidget*)d)); }), custom);
         gtk_box_append(GTK_BOX(box), b);
     }
-    gtk_popover_set_pointing_to(GTK_POPOVER(custom), &(GdkRectangle){(int)x, (int)y, 1, 1});
+    GdkRectangle rect = {(int)x, (int)y, 1, 1};
+    gtk_popover_set_pointing_to(GTK_POPOVER(custom), &rect);
     gtk_popover_set_has_arrow(GTK_POPOVER(custom), TRUE);
     gtk_popover_popup(GTK_POPOVER(custom));
     g_signal_connect(custom, "closed", (GCallback)(+[](GtkPopover *pop, gpointer){ gtk_widget_unparent(GTK_WIDGET(pop)); }), nullptr);
@@ -384,7 +385,8 @@ static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppS
         gtk_box_append(GTK_BOX(box), b);
     }
     gtk_popover_set_child(GTK_POPOVER(popover), box);
-    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &(GdkRectangle){(int)x, (int)y, 1, 1});
+    GdkRectangle rect2 = {(int)x, (int)y, 1, 1};
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect2);
     gtk_popover_set_has_arrow(GTK_POPOVER(popover), TRUE);
     gtk_popover_popup(GTK_POPOVER(popover));
     g_signal_connect(popover, "closed", (GCallback)(+[](GtkPopover *pop, gpointer){ gtk_widget_unparent(GTK_WIDGET(pop)); }), nullptr);
