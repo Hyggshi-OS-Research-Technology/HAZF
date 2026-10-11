@@ -2,20 +2,22 @@ Source: hazf
 Section: utils
 Priority: optional
 Maintainer: Hyggshi OS <tfhy5321@gmail.com>
-Build-Depends: debhelper-compat (= 13), cmake, pkg-config, libzstd-dev
+Build-Depends: debhelper-compat (= 13), cmake, pkg-config, libzstd-dev, libgtk-4-dev, libadwaita-1-dev
 Standards-Version: 4.6.2
 Homepage: https://github.com/Hyggshi-OS-Research-Technology/HAZF
 Rules-Requires-Root: no
 
 Package: hazf
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libzstd1
+Depends: ${shlibs:Depends}, ${misc:Depends}, libzstd1, libgtk-4-1
 Description: HAZF archive tool - Hyggshi Archive Zip Format
  Hyggshi Archive Zip Format (HAZF) is an independent binary archive
  format using Zstandard compression, little-endian encoding and CRC32
  integrity checking.
  .
- This package provides the `hazf` command line tool supporting create,
- list, extract, test and info operations for .hazf archives.
+ This package provides the `hazf` command line tool and `hazf-gui`
+ GTK4 graphical front-end supporting create, list, extract, test
+ and info operations for .hazf archives with polished icons,
+ drag-and-drop and animated UI.
  Its prototype limits are 8 GiB per file and 1,000,000 entries, and
  it handles regular files with relative POSIX paths.

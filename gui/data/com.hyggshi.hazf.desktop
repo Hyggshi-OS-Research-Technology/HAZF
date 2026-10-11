@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=HAZF Archive Manager
+Comment=Create, browse, extract and verify HAZF archives (Zstd + CRC32)
+GenericName=Archive Manager
+Exec=hazf-gui %F
+Icon=com.hyggshi.hazf
+Terminal=false
+Type=Application
+Categories=Utility;Archiving;GTK;
+Keywords=archive;hazf;zstd;compress;extract;
+MimeType=application/x-hazf;
+StartupNotify=true
+StartupWMClass=com.hyggshi.hazf
+X-GNOME-UsesNotifications=true
