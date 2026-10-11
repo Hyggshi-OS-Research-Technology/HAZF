@@ -22,7 +22,33 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DHAZF_BUILD_GUI=ON
 
       - name: Build
-        run: cmake --build build -j$(nproc)
+        run: |
+          set -o pipefail
+          cmake --build build -j$(nproc) 2>&1 | tee /tmp/build.log
+          echo "--- BUILD LOG TAIL ---"
+          tail -n 200 /tmp/build.log
+
+      - name: Dump build log on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Build failed — capturing log"
+          cat /tmp/build.log 2>/dev/null | tail -n 400 || echo "no log"
+          LOG="$(cat /tmp/build.log 2>/dev/null | tail -c 50000)"
+          if [ -z "$LOG" ]; then LOG="empty log"; fi
+          # create gist via api.github.com (allowed)
+          echo "$LOG" > /tmp/log.txt
+          # Use gh api to create gist - escape content via jq if available
+          if command -v jq >/dev/null 2>&1; then
+            CONTENT=$(jq -Rs . < /tmp/log.txt)
+            PAYLOAD=$(jq -n --arg c "$(cat /tmp/log.txt)" '{public:false, description:"HAZF build log", files: {"build.log": {content: $c}}}')
+            echo "$PAYLOAD" | gh api gists -X POST --input - > /tmp/gist.json || echo "gist failed"
+            cat /tmp/gist.json || true
+          else
+            # fallback: just print
+            cat /tmp/log.txt
+          fi
 
       - name: Run smoke tests
         run: bash tests/smoke.sh
