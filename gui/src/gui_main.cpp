@@ -179,8 +179,8 @@ static void show_shortcuts_dialog(AppState *st) {
     gtk_window_present(GTK_WINDOW(dlg));
 }
 
-using PairStr = PairStr;
-using PairInt = PairInt;
+using PairStr = std::pair<AppState*, std::string>;
+using PairInt = std::pair<AppState*, int>;
 
 static void show_create_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path, int idx);
 static void show_browse_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path);
@@ -190,9 +190,6 @@ static void choose_folder(AppState *st, GtkWindow *parent, std::function<void(st
 // ---------------------------------------------------------------------------
 // Context menu implementations (polished, minimal)
 // ---------------------------------------------------------------------------
-using PairStr = PairStr;
-using PairInt = PairInt;
-
 static void show_create_context_menu(GtkWidget *widget, double x, double y, AppState *st, const std::string &path, int idx) {
     GtkWidget *pop = gtk_popover_new();
     gtk_widget_set_parent(pop, widget);
