@@ -436,11 +436,18 @@ static int cmd_list(const std::vector<std::string>& args) {
             std::cerr << "warning: entry #" << (i+1) << " has suspicious path: " << path << "\n";
         }
 
-        // Skip payload: seek forward
+        // Skip payload: seek forward with truncation check
         if (eh.compressedSize > 0) {
-            // Check that we have enough bytes left
-            std::streampos cur = in.tellg();
-            // Use seek; but ensure not beyond EOF
+            std::streampos curPos = in.tellg();
+            if (curPos == std::streampos(-1)) {
+                std::cerr << "error: cannot determine position for entry #" << (i+1) << "\n";
+                return 1;
+            }
+            uint64_t cur = static_cast<uint64_t>(curPos);
+            if (cur + eh.compressedSize > archiveSize) {
+                std::cerr << "error: truncated payload for entry #" << (i+1) << " (" << path << "): need " << eh.compressedSize << " bytes but only " << (archiveSize - cur) << " remain\n";
+                return 1;
+            }
             in.seekg(static_cast<std::streamoff>(eh.compressedSize), std::ios::cur);
             if (!in) {
                 std::cerr << "error: truncated payload for entry #" << (i+1) << " (" << path << ")\n";
@@ -523,12 +530,24 @@ static int cmd_info(const std::vector<std::string>& args) {
                 return 1;
             }
             EntryHeader eh = EntryHeader::deserialize(ehBuf.data());
-            // skip path
-            if (eh.pathLen > 0) in.seekg(eh.pathLen, std::ios::cur);
-            if (!in) { std::cerr << "error: truncated path\n"; return 1; }
-            // skip payload
-            if (eh.compressedSize > 0) in.seekg(static_cast<std::streamoff>(eh.compressedSize), std::ios::cur);
-            if (!in) { std::cerr << "error: truncated payload\n"; return 1; }
+            // skip path with truncation check
+            if (eh.pathLen > 0) {
+                std::streampos curPos = in.tellg();
+                if (curPos == std::streampos(-1)) { std::cerr << "error: cannot determine position\n"; return 1; }
+                uint64_t cur = static_cast<uint64_t>(curPos);
+                if (cur + eh.pathLen > archiveSize) { std::cerr << "error: truncated path\n"; return 1; }
+                in.seekg(eh.pathLen, std::ios::cur);
+                if (!in) { std::cerr << "error: truncated path\n"; return 1; }
+            }
+            // skip payload with truncation check
+            if (eh.compressedSize > 0) {
+                std::streampos curPos = in.tellg();
+                if (curPos == std::streampos(-1)) { std::cerr << "error: cannot determine position\n"; return 1; }
+                uint64_t cur = static_cast<uint64_t>(curPos);
+                if (cur + eh.compressedSize > archiveSize) { std::cerr << "error: truncated payload\n"; return 1; }
+                in.seekg(static_cast<std::streamoff>(eh.compressedSize), std::ios::cur);
+                if (!in) { std::cerr << "error: truncated payload\n"; return 1; }
+            }
             totalOrig += eh.originalSize;
             totalComp += eh.compressedSize;
         }

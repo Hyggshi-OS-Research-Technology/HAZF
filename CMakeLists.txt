@@ -28,7 +28,34 @@ if(NOT ZSTD_FOUND)
 endif()
 
 if(NOT ZSTD_FOUND)
-    message(FATAL_ERROR "libzstd not found. Install libzstd-dev (apt) or zstd (brew).")
+    message(STATUS "libzstd not found via system, fetching from GitHub via FetchContent...")
+    include(FetchContent)
+    FetchContent_Declare(
+        zstd
+        GIT_REPOSITORY https://github.com/facebook/zstd.git
+        GIT_TAG v1.5.6
+        SOURCE_SUBDIR build/cmake
+    )
+    # Disable programs/tests for faster fetch build
+    set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(zstd)
+    if(TARGET libzstd_static)
+        set(ZSTD_LIBRARIES libzstd_static)
+        set(ZSTD_INCLUDE_DIRS ${zstd_SOURCE_DIR}/lib)
+        set(ZSTD_LIBRARY_DIRS "")
+        set(ZSTD_CFLAGS_OTHER "")
+        set(ZSTD_FOUND TRUE)
+    elseif(TARGET zstd::libzstd_static)
+        set(ZSTD_LIBRARIES zstd::libzstd_static)
+        set(ZSTD_INCLUDE_DIRS ${zstd_SOURCE_DIR}/lib)
+        set(ZSTD_LIBRARY_DIRS "")
+        set(ZSTD_CFLAGS_OTHER "")
+        set(ZSTD_FOUND TRUE)
+    else()
+        message(FATAL_ERROR "Failed to fetch libzstd via FetchContent")
+    endif()
 endif()
 
 # Executable
