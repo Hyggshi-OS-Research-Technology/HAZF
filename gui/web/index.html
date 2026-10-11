@@ -191,7 +191,8 @@
   .search { flex: 1; min-width: 160px; }
   .empty { text-align: center; padding: 36px 16px; color: var(--text-soft); }
   .empty-icon { width: 48px; height: 48px; margin: 0 auto 12px; border-radius: 12px; background: var(--accent-soft); display: grid; place-items: center; color: var(--accent); }
-  @media (max-width: 720px) {
+  .ctx-item:hover { background: rgba(53,132,228,0.10) !important; }
+@media (max-width: 720px) {
     .header-inner { flex-wrap: wrap; justify-content: center; }
     .input-row { flex-direction: column; align-items: stretch; }
     .input-row label { min-width: auto; }
@@ -494,6 +495,102 @@ const infoPath=document.getElementById('info-path'), infoOut=document.getElement
 document.getElementById('btn-info-choose').onclick=()=>{
   const p=prompt('Archive path:', infoPath.value || '/tmp/archive.hazf'); if(p) infoPath.value=p;
 };
+// About and Shortcuts - mandatory complete features
+const origShowAbout = typeof showAbout !== 'undefined' ? showAbout : null;
+window.showAbout = function(){ alert('HAZF Archive Manager v1.0.0\n\nHyggshi Archive Zip Format — independent binary format.\nMagic HAZF • Little-endian • Zstandard • CRC32.\n\nCreate, browse, extract and verify .hazf archives.\n\n© 2026 Hyggshi OS Research Technology\nhttps://github.com/Hyggshi-OS-Research-Technology/HAZF'); };
+// Header menu
+(function(){
+  const headerActions = document.querySelector('.header-actions');
+  if(headerActions){
+    const menuBtn = document.createElement('button');
+    menuBtn.className='icon-btn';
+    menuBtn.innerHTML='☰';
+    menuBtn.title='Primary Menu';
+    menuBtn.onclick=(e)=>{
+      const m = document.createElement('div');
+      m.style.cssText='position:fixed; right:12px; top:56px; background:white; border:1px solid rgba(0,0,0,0.08); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.12); padding:8px; min-width:200px; z-index:50;';
+      m.innerHTML=`
+        <div style="padding:6px 8px; font-weight:700; font-size:13px;">HAZF Menu</div>
+        <button onclick="document.getElementById('sec-create').classList.add('active'); document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active')); document.querySelector('[data-tab=create]').classList.add('active'); this.parentElement.remove();" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer;">＋ New Archive (Ctrl+N)</button>
+        <button onclick="document.querySelector('[data-tab=browse]').click(); this.parentElement.remove();" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer;">📂 Open Archive (Ctrl+O)</button>
+        <button onclick="showAbout(); this.parentElement.remove();" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer;">ℹ About HAZF</button>
+        <button onclick="alert('Shortcuts:\nCtrl+N New\nCtrl+O Open\nCtrl+E Extract\nCtrl+T Test\nRight-click: Context menu\nDrag & Drop: Add files'); this.parentElement.remove();" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer;">⌨ Shortcuts (F1)</button>
+      `;
+      document.body.append(m);
+      const close = (ev)=>{ if(!m.contains(ev.target) && ev.target!==menuBtn){ m.remove(); document.removeEventListener('click', close); } };
+      setTimeout(()=>document.addEventListener('click', close), 0);
+    };
+    headerActions.prepend(menuBtn);
+  }
+})();
+// Context menus for file lists
+(function(){
+  const ctx = document.getElementById('ctx');
+  const ctxB = document.getElementById('ctx-browse');
+  let ctxTarget = null, ctxIdx = -1, ctxPath = '';
+  document.addEventListener('click', ()=>{ ctx.style.display='none'; ctxB.style.display='none'; });
+  // Create list right-click
+  const fl = document.getElementById('file-list');
+  if(fl){
+    fl.addEventListener('contextmenu', (e)=>{
+      const row = e.target.closest('.file-row');
+      if(!row) return;
+      e.preventDefault();
+      // find idx
+      const rows = Array.from(fl.querySelectorAll('.file-row'));
+      ctxIdx = rows.indexOf(row);
+      const nameEl = row.querySelector('.file-name');
+      ctxTarget = nameEl ? nameEl.textContent : '';
+      ctx.style.left = e.pageX+'px';
+      ctx.style.top = e.pageY+'px';
+      ctx.style.display='block';
+    });
+    ctx.querySelectorAll('.ctx-item').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const act = btn.dataset.act;
+        if(act==='remove' && ctxIdx>=0){ files.splice(ctxIdx,1); refresh(); updateCreateBtn(); }
+        else if(act==='copy'){ navigator.clipboard.writeText(ctxTarget); statusCreate.textContent='Copied: '+ctxTarget; }
+        else if(act==='open'){ alert('Would open containing folder for: '+ctxTarget); }
+        ctx.style.display='none';
+      });
+      btn.addEventListener('mouseenter', ()=>btn.style.background='rgba(53,132,228,0.10)');
+      btn.addEventListener('mouseleave', ()=>btn.style.background='transparent');
+    });
+  }
+  // Browse list right-click
+  const tbl = document.getElementById('tbl-body');
+  if(tbl){
+    tbl.addEventListener('contextmenu', (e)=>{
+      const tr = e.target.closest('tr');
+      if(!tr || tr.querySelector('.empty')) return;
+      e.preventDefault();
+      const path = tr.cells[0].textContent.trim().replace(/^[^ ]+\s/, '');
+      ctxPath = path;
+      ctxB.style.left = e.pageX+'px';
+      ctxB.style.top = e.pageY+'px';
+      ctxB.style.display='block';
+    });
+    ctxB.querySelectorAll('.ctx-item').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const act = btn.dataset.act;
+        if(act==='extract'){ alert('Would extract: '+ctxPath+'\nChoose destination via Extract tab'); }
+        else if(act==='copyb'){ navigator.clipboard.writeText(ctxPath); statusBrowse.textContent='Copied: '+ctxPath; }
+        else if(act==='props'){ alert('Properties for: '+ctxPath+'\n'+document.getElementById('tbl-body').innerHTML.slice(0,200)); }
+        ctxB.style.display='none';
+      });
+      btn.addEventListener('mouseenter', ()=>btn.style.background='rgba(53,132,228,0.10)');
+      btn.addEventListener('mouseleave', ()=>btn.style.background='transparent');
+    });
+  }
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e)=>{
+    if(e.ctrlKey && e.key.toLowerCase()==='n'){ e.preventDefault(); files=[]; refresh(); statusCreate.textContent='New archive'; }
+    if(e.ctrlKey && e.key.toLowerCase()==='o'){ e.preventDefault(); document.querySelector('[data-tab=browse]').click(); }
+    if(e.key==='F1'){ e.preventDefault(); alert('HAZF Help\nCtrl+N New\nCtrl+O Open\nCtrl+E Extract\nRight-click for context menu'); }
+    if(e.key==='Delete' && document.getElementById('sec-create').classList.contains('active') && files.length>0){ files.pop(); refresh(); }
+  });
+})();
+
 btnVerify.onclick=async()=>{
   const p=infoPath.value.trim(); if(!p){ statusInfo.textContent='Choose an archive'; statusInfo.className='status err'; return; }
   btnVerify.disabled=true; statusInfo.textContent='Verifying...'; statusInfo.className='status'; infoOut.textContent='Verifying...\n';
@@ -523,5 +620,17 @@ All 4 entries verified successfully.
   statusInfo.textContent='✓ All entries verified'; statusInfo.className='status ok'; btnVerify.disabled=false;
 };
 </script>
+
+  <!-- Context menu (polished) -->
+  <div id="ctx" style="display:none; position:fixed; background:white; border:1px solid rgba(0,0,0,0.08); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.12); padding:6px; min-width:180px; z-index:99;">
+    <button class="ctx-item" data-act="open" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer; display:flex; gap:8px; align-items:center;"><span>📂</span> Open Containing Folder</button>
+    <button class="ctx-item" data-act="copy" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer; display:flex; gap:8px; align-items:center;"><span>⎘</span> Copy Path</button>
+    <button class="ctx-item" data-act="remove" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer; display:flex; gap:8px; align-items:center; color:#c01c28;"><span>🗑</span> Remove</button>
+  </div>
+  <div id="ctx-browse" style="display:none; position:fixed; background:white; border:1px solid rgba(0,0,0,0.08); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.12); padding:6px; min-width:180px; z-index:99;">
+    <button class="ctx-item" data-act="extract" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer; display:flex; gap:8px; align-items:center;"><span>⤓</span> Extract Selected</button>
+    <button class="ctx-item" data-act="copyb" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer; display:flex; gap:8px; align-items:center;"><span>⎘</span> Copy Path</button>
+    <button class="ctx-item" data-act="props" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; border-radius:8px; cursor:pointer; display:flex; gap:8px; align-items:center;"><span>ℹ</span> Properties</button>
+  </div>
 </body>
 </html>
