@@ -1,4 +1,6 @@
 /* HAZF GUI — Polished Adwaita-inspired theme */
+/* hz_* palette is injected at runtime by gui_main.cpp (light/dark) */
+@define-color hz_bg #242424; @define-color hz_card #303030; @define-color hz_header #2b2b2b; @define-color hz_fg #f2f2f2;
 @define-color hazf_accent #3584e4;
 @define-color hazf_accent_hover #4891e7;
 @define-color hazf_success #26a269;
@@ -7,12 +9,14 @@
 
 /* Window */
 window {
-  background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 100%);
+  background: @hz_bg;
+  color: @hz_fg;
 }
 
 headerbar {
-  background: linear-gradient(180deg, #ffffff 0%, #f6f6f6 100%);
-  border-bottom: 1px solid alpha(#000, 0.08);
+  background: @hz_header;
+  color: @hz_fg;
+  border-bottom: 1px solid alpha(@borders, 0.6);
   box-shadow: 0 1px 3px alpha(#000, 0.08);
 }
 
@@ -33,8 +37,7 @@ headerbar {
 .drop-area {
   border: 2.5px dashed alpha(@borders, 0.55);
   border-radius: 16px;
-  background: alpha(white, 0.7);
-  backdrop-filter: blur(12px);
+  background: alpha(@hz_card, 0.7);
   transition: all 250ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
   box-shadow: 0 2px 12px alpha(black, 0.04);
 }
@@ -43,28 +46,26 @@ headerbar {
   border-color: @hazf_accent;
   background: alpha(@hazf_accent, 0.08);
   box-shadow: 0 8px 24px alpha(@hazf_accent, 0.22), inset 0 0 0 1px alpha(@hazf_accent, 0.15);
-  transform: scale(1.01);
 }
 
 .drop-icon {
-  color: alpha(@window_fg_color, 0.55);
+  color: alpha(@hz_fg, 0.55);
   transition: all 250ms ease;
 }
 
 .drop-area.drag-over .drop-icon {
   color: @hazf_accent;
-  transform: scale(1.12);
 }
 
 .drop-title {
   font-size: 15px;
   font-weight: 600;
-  color: @window_fg_color;
+  color: @hz_fg;
 }
 
 .drop-subtitle {
   font-size: 13px;
-  color: alpha(@window_fg_color, 0.65);
+  color: alpha(@hz_fg, 0.65);
 }
 
 /* File row — hover, selection */
@@ -99,12 +100,13 @@ headerbar {
 
 .file-meta {
   font-size: 11px;
-  color: alpha(@window_fg_color, 0.6);
+  color: alpha(@hz_fg, 0.6);
 }
 
 /* Card */
 .card {
-  background: white;
+  background: @hz_card;
+  color: @hz_fg;
   border-radius: 12px;
   border: 1px solid alpha(@borders, 0.5);
   box-shadow: 0 2px 12px alpha(black, 0.06);
@@ -119,12 +121,12 @@ headerbar {
 .card-title {
   font-weight: 700;
   font-size: 14px;
-  color: @window_fg_color;
+  color: @hz_fg;
 }
 
 .card-subtitle {
   font-size: 12px;
-  color: alpha(@window_fg_color, 0.65);
+  color: alpha(@hz_fg, 0.65);
 }
 
 /* Archive badge */
@@ -155,11 +157,9 @@ button.suggested-action {
 button.suggested-action:hover {
   background: linear-gradient(180deg, @hazf_accent_hover 0%, #1c71d8 100%);
   box-shadow: 0 4px 16px alpha(@hazf_accent, 0.45);
-  transform: translateY(-1px);
 }
 
 button.suggested-action:active {
-  transform: translateY(0px);
   box-shadow: 0 1px 4px alpha(@hazf_accent, 0.3);
 }
 
@@ -190,14 +190,14 @@ progressbar progress {
 
 /* List column view */
 columnview {
-  background: white;
+  background: @hz_card;
   border-radius: 12px;
   border: 1px solid alpha(@borders, 0.5);
   box-shadow: 0 2px 12px alpha(black, 0.05);
 }
 
 columnview row:nth-child(even) {
-  background: alpha(@view_bg_color, 0.5);
+  background: alpha(@hz_card, 0.5);
 }
 
 columnview row:hover {
@@ -229,13 +229,13 @@ columnview row:hover {
 .info-label {
   font-size: 12px;
   font-weight: 600;
-  color: alpha(@window_fg_color, 0.7);
+  color: alpha(@hz_fg, 0.7);
 }
 
 .info-value {
   font-size: 13px;
   font-weight: 500;
-  color: @window_fg_color;
+  color: @hz_fg;
 }
 
 /* Animations */
@@ -263,12 +263,12 @@ scrollbar slider {
   border-radius: 999px;
   min-width: 8px;
   min-height: 8px;
-  background: alpha(@window_fg_color, 0.2);
+  background: alpha(@hz_fg, 0.2);
   transition: background 200ms ease;
 }
 
 scrollbar slider:hover {
-  background: alpha(@window_fg_color, 0.3);
+  background: alpha(@hz_fg, 0.3);
 }
 
 /* Header icon button */
@@ -279,6 +279,14 @@ scrollbar slider:hover {
 }
 
 .icon-button:hover {
-  background: alpha(@window_fg_color, 0.08);
-  transform: scale(1.05);
+  background: alpha(@hz_fg, 0.08);
+}
+
+.card list, .card listview, .card row {
+  background: transparent;
+  color: @hz_fg;
+}
+
+aboutdialog, aboutdialog label, aboutdialog stack {
+  color: @hz_fg;
 }

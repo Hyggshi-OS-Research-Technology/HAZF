@@ -82,20 +82,27 @@ static AppState *g_state = nullptr;
 // CSS
 // ---------------------------------------------------------------------------
 static const char *kCss = R"CSS(
-window { background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 100%); }
-headerbar { background: linear-gradient(180deg, #ffffff 0%, #f6f6f6 100%); border-bottom: 1px solid alpha(#000, 0.08); box-shadow: 0 1px 3px alpha(#000,0.08); }
+window { background: @hz_bg; color: @hz_fg; }
+headerbar { background: @hz_header; color: @hz_fg; border-bottom: 1px solid alpha(@borders, 0.6); box-shadow: 0 1px 3px alpha(black,0.08); }
+headerbar label, headerbar .title { color: @hz_fg; }
 .stack-switcher button { border-radius: 999px; padding: 6px 16px; transition: all 200ms cubic-bezier(0.25,0.46,0.45,0.94); }
 .stack-switcher button:checked { background: #3584e4; color: white; box-shadow: 0 2px 8px alpha(#3584e4,0.35); }
-.drop-area { border: 2.5px dashed alpha(@borders,0.55); border-radius: 16px; background: alpha(white,0.7); transition: all 250ms cubic-bezier(0.25,0.46,0.45,0.94); box-shadow: 0 2px 12px alpha(black,0.04); }
+.drop-area { border: 2.5px dashed alpha(@borders,0.55); border-radius: 16px; background: alpha(@hz_card,0.7); transition: all 250ms cubic-bezier(0.25,0.46,0.45,0.94); box-shadow: 0 2px 12px alpha(black,0.04); }
 .drop-area.drag-over { border-color: #3584e4; background: alpha(#3584e4,0.08); box-shadow: 0 8px 24px alpha(#3584e4,0.22), inset 0 0 0 1px alpha(#3584e4,0.15); }
-.drop-icon { color: alpha(@window_fg_color,0.55); transition: all 250ms ease; }
+.drop-icon { color: alpha(@hz_fg,0.55); transition: all 250ms ease; }
 .drop-area.drag-over .drop-icon { color: #3584e4; }
-.drop-title { font-size: 15px; font-weight: 600; }
-.drop-subtitle { font-size: 13px; color: alpha(@window_fg_color,0.65); }
+.drop-title { font-size: 15px; font-weight: 600; color: @hz_fg; }
+.drop-subtitle { font-size: 13px; color: alpha(@hz_fg,0.65); }
 .file-row { border-radius: 10px; padding: 8px 10px; margin: 2px 0; transition: all 180ms ease; border: 1px solid transparent; }
 .file-row:hover { background: alpha(#3584e4,0.08); border-color: alpha(#3584e4,0.12); box-shadow: 0 2px 8px alpha(black,0.04); }
-.card { background: white; border-radius: 12px; border: 1px solid alpha(@borders,0.5); box-shadow: 0 2px 12px alpha(black,0.06); padding: 16px; }
+.card { background: @hz_card; color: @hz_fg; border-radius: 12px; border: 1px solid alpha(@borders,0.5); box-shadow: 0 2px 12px alpha(black,0.06); padding: 16px; }
 .card:hover { box-shadow: 0 4px 20px alpha(black,0.09); }
+.card list, .card listview, .card row { background: transparent; color: @hz_fg; }
+.card-title { font-weight: 700; font-size: 14px; color: @hz_fg; }
+.card-subtitle, .file-meta { color: alpha(@hz_fg,0.7); }
+.file-name { color: @hz_fg; font-weight: 500; }
+.file-meta { font-size: 11px; }
+aboutdialog, aboutdialog label, aboutdialog stack { color: @hz_fg; }
 button.pill { border-radius: 999px; padding: 8px 20px; font-weight: 600; transition: all 200ms cubic-bezier(0.25,0.46,0.45,0.94); }
 button.suggested-action { background: linear-gradient(180deg, #3584e4 0%, #1c71d8 100%); color: white; box-shadow: 0 2px 10px alpha(#3584e4,0.35); }
 button.suggested-action:hover { background: linear-gradient(180deg, #4891e7 0%, #1c71d8 100%); box-shadow: 0 4px 16px alpha(#3584e4,0.45); }
@@ -106,9 +113,9 @@ progressbar progress { border-radius: 999px; background: linear-gradient(90deg, 
 popover contents { padding: 6px; border-radius: 12px; }
 popover modelbutton { border-radius: 8px; padding: 6px 10px; }
 .shortcut-row { padding: 6px 0; border-bottom: 1px solid alpha(@borders, 0.3); }
-.shortcut-key { background: alpha(@window_fg_color, 0.08); border: 1px solid alpha(@borders, 0.5); border-bottom-width: 2px; border-radius: 6px; padding: 2px 7px; font-family: monospace; font-size: 11px; font-weight: 700; }
+.shortcut-key { background: alpha(@hz_fg, 0.08); border: 1px solid alpha(@borders, 0.5); border-bottom-width: 2px; border-radius: 6px; padding: 2px 7px; font-family: monospace; font-size: 11px; font-weight: 700; }
 .icon-button { border-radius: 999px; padding: 6px; }
-.icon-button:hover { background: alpha(@window_fg_color, 0.08); }
+.icon-button:hover { background: alpha(@hz_fg, 0.08); }
 )CSS";
 
 // ---------------------------------------------------------------------------
@@ -1552,8 +1559,18 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
     gtk_stack_add_titled(st->stack, info_page, "info", "Verify");
 
     // Apply CSS
+    // Opaque palette (system theme colors may be translucent) — pick light/dark from theme text color
+    GdkRGBA fg = {0,0,0,1};
+#if GTK_CHECK_VERSION(4,10,0)
+    gtk_widget_get_color(GTK_WIDGET(st->window), &fg);
+#endif
+    bool dark = (0.2126*fg.red + 0.7152*fg.green + 0.0722*fg.blue) > 0.5;
+    std::string palette = dark
+        ? "@define-color hz_bg #242424; @define-color hz_card #303030; @define-color hz_header #2b2b2b; @define-color hz_fg #f2f2f2;\n"
+        : "@define-color hz_bg #f2f2f2; @define-color hz_card #ffffff; @define-color hz_header #fafafa; @define-color hz_fg #1f1f1f;\n";
+    std::string full_css = palette + kCss;
     GtkCssProvider *provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_string(provider, kCss);
+    gtk_css_provider_load_from_string(provider, full_css.c_str());
     gtk_style_context_add_provider_for_display(gdk_display_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     // Main container
