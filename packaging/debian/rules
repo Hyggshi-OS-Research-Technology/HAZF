@@ -1,0 +1,12 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release
+
+override_dh_auto_install:
+	dh_auto_install
+	# MIME database is installed via CMake; ensure XML is present
+	# (CMake already installs packaging/debian/hazf.xml to share/mime/packages)
